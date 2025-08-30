@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Guitar Note Trainer — Final Polished</title>
+<style>
+  :root{
+    --bg1:#2c3e50; --bg2:#1a1a2e; --accent:#3498db; --accent2:#2ecc71;
+    --panel-bg: rgba(255,255,255,0.06); --muted:#bbb; --danger:#e74c3c;
+    --note-circle-size:250px; --text-color: #fff;
+  }
+  /* overall layout uses viewport-based scaling so left/center/right scale better */
+  body {
+    margin:0; font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg,var(--bg1),var(--bg2));
+    color:var(--text-color); min-height:100vh; padding:12px; box-sizing:border-box;
+    display:flex; gap:12px; align-items:flex-start; justify-content:space-between;
+  }
+
+  .col { background:var(--panel-bg); border-radius:8px; padding:12px; box-shadow:0 6px 18px rgba(0,0,0,0.35); color:var(--text-color); display:flex; flex-direction:column; gap:10px; }
+  /* responsive widths: left and right scale with viewport but clamp */
+  .left, .right { flex:0 0 24vw; min-width:220px; max-width:420px; }
+  .center { flex:1 1 52vw; display:flex; flex-direction:column; align-items:center; gap:12px; }
+
+  h1 { font-size:1.2rem; margin:4px 0;
+       background: linear-gradient(to right, var(--accent), var(--accent2));
+       -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  }
+  p.sub { color:var(--muted); font-size:0.88rem; margin:0; }
+
+  /* NOTE DISPLAY */
+  .note-display {
+    width:var(--note-circle-size); height:var(--note-circle-size); border-radius:50%;
+    display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative;
+    border:2px solid rgba(255,255,255,0.12); overflow:visible; background:rgba(255,255,255,0.02);
+  }
+  .note-display > * { position:relative; z-index:2; } /* elements above decorations */
+  .note-display .decor { position:absolute; left:0; top:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; pointer-events:none; z-index:1; }
+  .note-display.correct{ box-shadow:0 12px 40px rgba(76,175,80,0.35); transform:scale(1.03); }
+  .note-display.incorrect{ box-shadow:0 12px 40px rgba(175,76,76,0.28); transform:scale(.99); }
+
+  .progress-ring { position:absolute; inset:0; pointer-events:none; z-index:3; }
+  .progress-circle{ fill:none; stroke:var(--accent); stroke-width:4; transform:rotate(-90deg); transform-origin:50% 50%; transition: stroke-dashoffset .12s linear; }
+
+  /* .string-number { color:var(--muted); margin-bottom:6px; font-size:0.98rem; z-index:4; } */
+  /* Base styling */
+  .string-number {
+      font-weight: bold;
+      margin-bottom: 6px;
+      font-size: 0.98rem;
+      z-index: 4;
+      color: inherit; /* will be overridden by theme */
+  }
+
+  .note-letter {
+      font-size: 4.2rem;
+      font-weight: 700;
+      letter-spacing: 3px;
+      z-index: 4;
+      color: inherit;
+  }
+
+  /* Theme overrides */
+  .theme-flower .string-number,
+  .theme-flower .note-letter {
+      color: black;
+  }
+
+  .theme-amogus .string-number,
+  .theme-amogus .note-letter {
+      color: white;
+      text-shadow: -1px -1px 0 black,
+                  1px -1px 0 black,
+                  -1px 1px 0 black,
+                  1px 1px 0 black;
+  }
+  .note-text { display:none; } /* removed as requested */
+
+  .staff-svg { width:260px; height:160px; display:block; margin-top:8px; z-index:4; } /* bigger boundaries than before */
+
+  /* controls */
+  .controls{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  button{ background:var(--accent); color:white; border:none; padding:8px 12px; border-radius:999px; cursor:pointer; box-shadow:0 6px 14px rgba(0,0,0,0.3); font-size:0.95rem; }
+  button.toggle{ background:transparent; border:2px solid rgba(255,255,255,0.08); }
+  .toggle.active{ background:var(--accent); }
+
+  .sensitivity { width:220px; margin-top:6px; }
+
+  /* fretboard */
+  .fretboard-container { width:100%; max-width:860px; background:rgba(0,0,0,0.06); border-radius:8px; padding:12px; }
+  .fretboard-diagram{ display:flex; flex-direction:column; gap:8px; }
+  .string{ display:flex; align-items:center; gap:10px; height:28px; }
+  .string-name{ width:30px; font-weight:700; }
+  .frets{ display:flex; gap:6px; flex:1; }
+  .fret{ flex:1; position:relative; height:20px; display:flex; align-items:center; justify-content:center; border-right:2px solid rgba(255,255,255,0.04); }
+  .fret-marker{ width:18px; height:18px; border-radius:50%; background:var(--accent); display:none; }
+  .fret-marker.visible{ display:block; }
+
+  /* fret numbers row aligned with frets */
+  .fret-numbers { display:flex; gap:6px; margin-top:6px; width:100%; }
+  .fret-number { flex:1; text-align:center; color:rgba(255,255,255,0.45); font-size:0.88rem; }
+
+  /* shop modal: less transparent, horizontal tiles */
+  .modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,0.86); z-index:9999; }
+  .modal.open{ display:flex; }
+  .modal .card{ background:linear-gradient(180deg, rgba(16,16,16,0.98), rgba(8,8,8,0.98)); padding:18px; border-radius:8px; width:92%; max-width:980px; color:var(--text-color); }
+  .theme-list { display:flex; gap:12px; flex-wrap:wrap; }
+  .theme-tile { min-width:140px; background:rgba(255,255,255,0.03); padding:12px; border-radius:8px; display:flex; flex-direction:column; gap:8px; align-items:flex-start; color:var(--text-color); }
+
+  /* blackjack */
+  .bj-table { display:flex; flex-direction:column; gap:8px; padding:8px; border-radius:6px; background: linear-gradient(180deg, rgba(0,0,0,0.06), rgba(0,0,0,0.03)); }
+  .cards { display:flex; gap:8px; margin-top:6px; justify-content:flex-end; }
+  .card { min-width:44px; min-height:60px; border-radius:6px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.06); font-weight:700; color:var(--text-color); }
+  .btn-row { display:flex; gap:8px; margin-top:8px; justify-content:flex-end; }
+
+  .score { font-weight:700; color:var(--accent2); font-size:1.2rem; }
+  .smallmuted{ color:var(--muted); font-size:0.85rem; }
+
+  /* dev panel */
+  .dev-panel { display:none; position:fixed; right:16px; bottom:16px; background:rgba(0,0,0,0.7); padding:12px; border-radius:8px; z-index:999; box-shadow:0 8px 30px rgba(0,0,0,0.6); }
+  .dev-panel.open{ display:block; }
+  .dev-panel input{ width:90px; padding:6px; border-radius:6px; border:1px solid rgba(255,255,255,0.06); background:transparent; color:inherit; }
+
+  /* among-us/decal inside circle: .decor img */
+  .decor img { max-width:90px; max-height:90px; opacity:0.95; }
+
+  @media (max-width:1050px){ .left, .right{ display:none; } body{ padding:8px; } }
+</style>
+<!-- theme styles -->
+<style id="theme-styles">
+/* default */
+body[data-theme="default"]{ --bg1:#2c3e50; --bg2:#1a1a2e; --accent:#3498db; --accent2:#2ecc71; --text-color: #fff; }
+/* flower */
+body[data-theme="1"]{ --bg1:#2b3a36; --bg2:#163a2b; --accent:#e67e22; --accent2:#f1c40f; --text-color:#fff; }
+/* among us - will show image */
+body[data-theme="2"]{ --bg1:#111217; --bg2:#0b1020; --accent:#ff4757; --accent2:#ff6b81; --text-color:#fff; }
+/* sunset */
+body[data-theme="3"]{ --bg1:#2b2d42; --bg2:#3f3f74; --accent:#f39c12; --accent2:#ff7675; --text-color:#fff; }
+/* nature plant */
+body[data-theme="6"]{ --bg1:#0b3d2e; --bg2:#0f5136; --accent:#2ecc71; --accent2:#7bd389; --text-color:#fff; }
+/* galaxy */
+body[data-theme="7"]{ --bg1:#040821; --bg2:#2b0553; --accent:#7f5af0; --accent2:#4ad0ff; --text-color:#fff; }
+/* fight club */
+body[data-theme="8"]{ --bg1:#0b0b0b; --bg2:#1a1a1a; --accent:#b71c1c; --accent2:#f44336; --text-color:#fff; }
+</style>
+</head>
+<body data-theme="default">
+
+  <!-- LEFT: Youtube (no explanatory text) -->
+  <div class="col left" style="order:1;">
+    <h1>GTA Ramp</h1>
+    <div id="ytWrap" style="flex:1; border-radius:8px; overflow:hidden; width:100%; display:flex; align-items:stretch; justify-content:center;">
+      <!-- responsive iframe: keep aspect ratio -->
+      <iframe id="youtubeIframe" width="100%" height="100%" src="https://www.youtube.com/embed/ZtLrNBdXT7M" title="GTA ramp" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="min-height:200px;"></iframe>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:8px; width:100%;">
+      <div style="flex:1;" class="smallmuted">Current theme:</div><div id="currentThemeName" style="font-weight:700; text-align:right;">Default</div>
+    </div>
+    <div style="margin-top:8px;">
+      <button class="shop-btn" id="openShopBtn">Shop themes</button>
+    </div>
+  </div>
+
+  <!-- CENTER: Trainer -->
+  <div class="col center" style="order:2;">
+    <header style="text-align:center; width:100%;">
+      <h1>Guitar Note Trainer</h1>
+      <p class="sub">Play the note, earn points.</p>
+    </header>
+
+    <div style="display:flex; flex-direction:column; align-items:center;">
+      <div class="note-display" id="noteDisplay" title="Play the shown note">
+        <!-- progress SVG: circumference computed in JS -->
+        <svg id="progressSvg" class="progress-ring" width="250" height="250" viewBox="0 0 250 250" aria-hidden>
+          <circle id="progressCircle" class="progress-circle" cx="125" cy="125" r="115"></circle>
+        </svg>
+
+        <!-- main readable elements are above decorations (z-index) -->
+        <div class="string-number">String: <span id="stringName">-</span></div>
+        <div class="note-letter" id="noteName">-</div>
+        <!-- decorations container (flower / among us) sits inside circle but below text -->
+        <div class="decor" id="decorHolder"></div>
+
+        <!-- staff (bigger boundaries) -->
+        <div id="staffWrapper" style="margin-top:8px;">
+          <svg id="staffSvg" class="staff-svg" viewBox="0 0 260 160" preserveAspectRatio="xMidYMid meet" aria-hidden>
+            <!-- 5 staff lines positioned roughly centered -->
+            <g id="staffLines" stroke="white" stroke-opacity="0.35" stroke-width="1">
+              <line x1="20" y1="40" x2="240" y2="40"></line>
+              <line x1="20" y1="56" x2="240" y2="56"></line>
+              <line x1="20" y1="72" x2="240" y2="72"></line>
+              <line x1="20" y1="88" x2="240" y2="88"></line>
+              <line x1="20" y1="104" x2="240" y2="104"></line>
+            </g>
+            <g id="ledgerLines" stroke="white" stroke-opacity="0.75" stroke-width="2"></g>
+            <g id="noteOnStaff" transform="translate(120,72)">
+              <ellipse id="staffNoteEllipse" cx="0" cy="0" rx="9" ry="6" fill="white"></ellipse>
+            </g>
+            <!-- small tick reference lines (thin) for semitone refs -->
+            <g id="referenceTicks" stroke="rgba(255,255,255,0.15)" stroke-width="1"></g>
+          </svg>
+        </div>
+
+        <!-- small area for flower (now moved into circle as decoration) - kept empty -->
+      </div>
+
+      <div class="status" id="status" style="min-height:20px;"></div>
+
+      <div class="controls" style="width:100%; justify-content:center;">
+        <button id="startButton">Start</button>
+        <button id="newNoteButton" disabled>New Note</button>
+        <button id="toggleDisplay" class="toggle">Switch to Staff Notation</button>
+        <div style="display:flex; flex-direction:column; align-items:center;">
+          <input id="sensitivity" class="sensitivity" type="range" min="1" max="10" value="5" />
+          <div class="smallmuted">Sensitivity</div>
+        </div>
+      </div>
+
+      <div class="hint">Press Spacebar to reveal the fret position. Hold the note until the progress completes.</div>
+
+      <div class="fretboard-container">
+        <h3>Fretboard Hint</h3>
+        <div class="fretboard-diagram" id="fretboardDiagram"></div>
+        <div class="fret-numbers" id="fretNumbers" style="margin-top:6px;"></div>
+      </div>
+
+      <div style="margin-top:12px; display:flex; gap:16px; align-items:center;">
+        <div>Points:<div class="score" id="scoreDisplay">0</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Blackjack (uses score directly) -->
+  <div class="col right" style="order:3;">
+    <h1>Blackjack</h1>
+
+    <div class="bj-table" id="bjTable">
+      <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+        <div>Available: <span id="availableDisplay" class="score">0</span></div>
+        <div>Bet: <input id="betInput" type="number" min="1" value="1" style="width:70px; border-radius:6px; padding:6px; background:transparent; color:inherit; border:1px solid rgba(255,255,255,0.06)"></div>
+      </div>
+
+      <div>
+        <div class="smallmuted">Your Hand</div>
+        <div class="cards" id="playerCards"></div>
+        <div class="smallmuted">Player value: <span id="playerValue">0</span></div>
+      </div>
+
+      <div style="margin-top:8px;">
+        <div class="smallmuted">Dealer</div>
+        <div class="cards" id="dealerCards"></div>
+        <div class="smallmuted">Dealer value: <span id="dealerValue">0</span></div>
+      </div>
+
+      <div class="btn-row">
+        <button id="dealBtn">Deal</button>
+        <button id="hitBtn" disabled>Hit</button>
+        <button id="standBtn" disabled>Stand</button>
+      </div>
+
+      <div id="bjMessage" style="margin-top:8px;color:var(--muted)"></div>
+    </div>
+
+    <!-- Save / Load buttons for secure code (gameboy-ish) -->
+    <div style="display:flex; gap:8px; margin-top:10px; justify-content:flex-end;">
+      <button id="saveStateBtn">Save Code</button>
+      <button id="loadStateBtn">Load Code</button>
+    </div>
+    <!-- modal to show/save code -->
+    <div id="codeModal" class="modal">
+      <div class="card" style="max-width:600px;">
+        <h3>Save / Load Code</h3>
+        <div id="codeContent" style="display:flex; gap:8px; margin-top:8px; align-items:center;">
+          <textarea id="codeBox" style="width:100%; height:86px; background:transparent; color:var(--text-color);"></textarea>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
+          <button id="copyCodeBtn">Copy</button>
+          <button id="applyCodeBtn">Apply (Load)</button>
+          <button id="closeCodeModal">Close</button>
+        </div>
+        <div id="codeMsg" class="smallmuted" style="margin-top:8px;"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- shop modal -->
+  <div class="modal" id="shopModal">
+    <div class="card">
+      <h2>Theme Shop</h2>
+      <p class="smallmuted">Buy aesthetics. Owned themes can be applied immediately.</p>
+      <div class="theme-list" id="themeList" style="margin-top:12px;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
+        <button id="closeShop">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- dev panel -->
+  <div class="dev-panel" id="devPanel">
+    <div style="display:flex; gap:8px; align-items:center;">
+      <div style="font-weight:700;">DEV</div>
+      <div class="smallmuted">Points:</div>
+      <input id="devScoreInput" type="number" value="0">
+      <button id="devSetScore">Set</button>
+      <label style="display:flex; gap:6px; align-items:center;"><input id="devGHold" type="checkbox"> Hold 'g'</label>
+      <button id="devClose">Close</button>
+    </div>
+  </div>
+
+<script>
+/* ---------- Themes: removed desert & dessert (you asked) ---------- */
+const themes = [
+  { id: "1", name:"Flower", desc:"Note circle gets a flower below it.", price: 50, class: "theme-flower" },
+  { id: "2", name:"Among Us", desc:"Sussy red theme + decal.", price: 100, class: "theme-amogus", decal: "https://static.wikia.nocookie.net/versus-compendium/images/5/5f/Impostor.png" },
+  { id: "3", name:"Sunset", desc:"Warm sunset vibe.", price: 200 },
+  { id: "6", name:"Nature Plant", desc:"Green leaves and calm.", price: 1600 },
+  { id: "7", name:"Galaxy", desc:"Stars, neon, cosmic.", price: 3200 },
+  { id: "8", name:"Fight Club", desc:"Grungy fight club theme (most expensive).", price: 6400 }
+];
+
+const strings = [
+  {name: 'E', baseFreq: 82.4069 },
+  {name: 'A', baseFreq: 110.000 },
+  {name: 'D', baseFreq: 146.832 },
+  {name: 'G', baseFreq: 196.000 },
+  {name: 'B', baseFreq: 246.942 },
+  {name: 'e', baseFreq: 329.628 }
+];
+
+let noteFrequencies = [];
+for (let s=0; s<strings.length; s++){
+  let arr=[];
+  for (let f=0; f<=12; f++){
+    arr.push(strings[s].baseFreq * Math.pow(2, f/12));
+  }
+  noteFrequencies.push(arr);
+}
+
+/* ---------- state ---------- */
+let displayMode = 'letter';
+let currentString = -1, currentFret = -1, currentFrequency = 0;
+let audioContext, microphone, analyser, javascriptNode;
+let isListening = false;
+let correctNoteSustained = 0, requiredSustainTime = 400, confidenceThreshold = 0.08;
+let soundPlayed = false, lastDetectionTime = Date.now();
+let userScore = Number(localStorage.getItem('userScore')||0);
+let ownedThemes = JSON.parse(localStorage.getItem('ownedThemes')||'[]');
+let activeTheme = localStorage.getItem('activeTheme') || 'default';
+
+/* ---------- DOM ---------- */
+const progressCircle = document.getElementById('progressCircle');
+const noteDisplay = document.getElementById('noteDisplay');
+const stringNameElement = document.getElementById('stringName');
+const noteNameElement = document.getElementById('noteName');
+const staffSvg = document.getElementById('staffSvg');
+const ledgerGroup = document.getElementById('ledgerLines');
+const refTicksGroup = document.getElementById('referenceTicks');
+const staffNoteGroup = document.getElementById('noteOnStaff');
+const staffNoteEllipse = document.getElementById('staffNoteEllipse');
+const statusElement = document.getElementById('status');
+const startButton = document.getElementById('startButton');
+const newNoteButton = document.getElementById('newNoteButton');
+const toggleDisplayButton = document.getElementById('toggleDisplay');
+const sensitivity = document.getElementById('sensitivity');
+const scoreDisplay = document.getElementById('scoreDisplay');
+const currentThemeName = document.getElementById('currentThemeName');
+
+const openShopBtn = document.getElementById('openShopBtn');
+const shopModal = document.getElementById('shopModal');
+const themeList = document.getElementById('themeList');
+const closeShop = document.getElementById('closeShop');
+
+const availableDisplay = document.getElementById('availableDisplay');
+const betInput = document.getElementById('betInput');
+const dealBtn = document.getElementById('dealBtn');
+const hitBtn = document.getElementById('hitBtn');
+const standBtn = document.getElementById('standBtn');
+const playerCardsDiv = document.getElementById('playerCards');
+const dealerCardsDiv = document.getElementById('dealerCards');
+const playerValueSpan = document.getElementById('playerValue');
+const dealerValueSpan = document.getElementById('dealerValue');
+const bjMessage = document.getElementById('bjMessage');
+
+const decorHolder = document.getElementById('decorHolder');
+const youtubeIframe = document.getElementById('youtubeIframe');
+
+/* shop modal */
+const codeModal = document.getElementById('codeModal');
+const codeBox = document.getElementById('codeBox');
+const copyCodeBtn = document.getElementById('copyCodeBtn');
+const applyCodeBtn = document.getElementById('applyCodeBtn');
+const closeCodeModal = document.getElementById('closeCodeModal');
+const codeMsg = document.getElementById('codeMsg');
+
+/* dev UI */
+const devPanel = document.getElementById('devPanel');
+const devScoreInput = document.getElementById('devScoreInput');
+const devSetScore = document.getElementById('devSetScore');
+const devGHold = document.getElementById('devGHold');
+const devClose = document.getElementById('devClose');
+
+/* among us decal img element placed inside decor when applied */
+let amongUsImgEl = null;
+
+/* ---------- progress circle circumference ---------- */
+const r = Number(progressCircle.getAttribute('r') || 115);
+const circumference = 2 * Math.PI * r;
+const baseOffsetFactor = 0.125; // 12.5% visual start
+progressCircle.style.strokeDasharray = circumference.toFixed(3);
+function setProgressVisual(progress){ // progress 0..1
+  const startOffset = circumference * (1 + baseOffsetFactor);
+  const offset = Math.max(0, startOffset - progress * (startOffset));
+  progressCircle.style.strokeDashoffset = offset.toFixed(3);
+}
+setProgressVisual(0);
+
+/* ---------- init fretboard & numbers so alignment is exact ---------- */
+function initFretboard(){
+  const fb = document.getElementById('fretboardDiagram');
+  const fn = document.getElementById('fretNumbers');
+  fb.innerHTML = ''; fn.innerHTML='';
+  for (let i=0;i<strings.length;i++){
+    const sdiv=document.createElement('div'); sdiv.className='string';
+    const sname=document.createElement('div'); sname.className='string-name'; sname.textContent=strings[i].name;
+    const frets=document.createElement('div'); frets.className='frets'; frets.style.display='flex';
+    for (let fret=0; fret<=12; fret++){
+      const fretElem=document.createElement('div'); fretElem.className='fret';
+      fretElem.dataset.string=i; fretElem.dataset.fret=fret;
+      fretElem.style.flex='1';
+      fretElem.style.height='20px';
+      const mark=document.createElement('div'); mark.className='fret-marker';
+      fretElem.appendChild(mark); frets.appendChild(fretElem);
+    }
+    sdiv.appendChild(sname); sdiv.appendChild(frets);
+    fb.appendChild(sdiv);
+  }
+  // create fret numbers with same flex sizing
+  const fnContainer = document.getElementById('fretNumbers');
+  fnContainer.innerHTML='';
+  for (let fret=0; fret<=12; fret++){
+    const d = document.createElement('div'); d.className='fret-number'; d.textContent=fret; d.style.flex='1';
+    fnContainer.appendChild(d);
+  }
+}
+initFretboard();
+
+/* ---------- events ---------- */
+startButton.addEventListener('click', initAudio);
+newNoteButton.addEventListener('click', generateNewNote);
+toggleDisplayButton.addEventListener('click', toggleDisplayMode);
+sensitivity.addEventListener('input', () => {
+  requiredSustainTime = 800 - (sensitivity.value*60);
+  confidenceThreshold = 0.05 + (sensitivity.value*0.01);
+});
+document.addEventListener('keydown', (e)=>{ if (e.code==='Space'){ e.preventDefault(); showHint(); } });
+
+openShopBtn.addEventListener('click', ()=>{ renderShop(); shopModal.classList.add('open'); });
+closeShop.addEventListener('click', ()=>{ shopModal.classList.remove('open'); });
+
+/* Save / Load modal */
+document.getElementById('saveStateBtn').addEventListener('click', async ()=>{
+  const code = await generateSaveCode();
+  codeBox.value = code;
+  codeMsg.textContent = 'Copy this code somewhere safe — it encodes score + owned themes.';
+  codeModal.classList.add('open');
+});
+document.getElementById('loadStateBtn').addEventListener('click', ()=>{
+  codeBox.value = '';
+  codeMsg.textContent = '';
+  codeModal.classList.add('open');
+});
+closeCodeModal.addEventListener('click', ()=>{ codeModal.classList.remove('open'); codeMsg.textContent=''; });
+
+copyCodeBtn.addEventListener('click', async ()=>{
+  try { await navigator.clipboard.writeText(codeBox.value); codeMsg.textContent='Copied to clipboard.'; } catch(e){ codeMsg.textContent='Copy failed.'; }
+});
+applyCodeBtn.addEventListener('click', async ()=>{ const code = codeBox.value.trim(); if (!code) { codeMsg.textContent='Paste a code into the box.'; return; } const ok = await applySaveCode(code); codeMsg.textContent = ok ? 'Loaded state.' : 'Invalid code.'; if (ok) { updateDisplays(); renderShop(); codeModal.classList.remove('open'); } });
+
+/* ---------- shop rendering ---------- */
+function renderShop(){
+  themeList.innerHTML='';
+  for (const t of themes){
+    const tile=document.createElement('div'); tile.className='theme-tile';
+    tile.innerHTML = `<div style="font-weight:700">${t.name}</div><div class="smallmuted" style="font-size:0.85rem">${t.desc}</div><div style="font-weight:700">${t.price} pts</div>`;
+    const btn=document.createElement('button');
+    if (ownedThemes.includes(t.id)){
+      btn.textContent = 'Apply';
+      btn.addEventListener('click', ()=>{ applyTheme(t.id); shopModal.classList.remove('open'); });
+    } else {
+      btn.textContent = 'Buy';
+      btn.addEventListener('click', ()=>{
+        if (userScore < t.price){ alert('You need more points to buy this theme.'); return; }
+        if (!confirm(`Buy ${t.name} for ${t.price} points?`)) return;
+        userScore -= t.price; ownedThemes.push(t.id); localStorage.setItem('ownedThemes', JSON.stringify(ownedThemes));
+        persist(); updateDisplays(); applyTheme(t.id); shopModal.classList.remove('open');
+      });
+    }
+    tile.appendChild(btn);
+    themeList.appendChild(tile);
+  }
+}
+
+/* ---------- theme application (flower & amongus as decorations inside circle) ---------- */
+function applyTheme(id) {
+    if (id === 'default') {
+        document.body.setAttribute('data-theme','default');
+        currentThemeName.textContent = 'Default';
+        activeTheme = 'default';
+        localStorage.setItem('activeTheme', activeTheme);
+        toggleFlower(false);
+        toggleAmongUs(false);
+        applyTextTheme('default'); // new helper
+        return;
+    }
+
+    if (!ownedThemes.includes(id)) {
+        alert('You do not own that theme.');
+        return;
+    }
+
+    document.body.setAttribute('data-theme', id);
+
+    const t = themes.find(x => x.id === id);
+    currentThemeName.textContent = t ? t.name : 'Theme';
+    activeTheme = id;
+    localStorage.setItem('activeTheme', activeTheme);
+
+    toggleFlower(id === '1');
+    toggleAmongUs(id === '2' && t && t.decal);
+
+    // apply string/note colors
+    applyTextTheme(id);
+}
+
+// Helper function to apply string/note color and outline
+function applyTextTheme(id) {
+    const stringEl = document.querySelector('.string-number');
+    const noteEl = document.querySelector('.note-letter');
+
+    if (!stringEl || !noteEl) return;
+
+    switch(id) {
+        case '1': // Flower
+            stringEl.style.color = 'black';
+            stringEl.style.textShadow = 'none';
+            noteEl.style.color = 'black';
+            noteEl.style.textShadow = 'none';
+            break;
+        case '2': // Among Us
+            stringEl.style.color = 'white';
+            stringEl.style.textShadow = '-1px -1px 0 black, 1px -1px 0 black, -1px 1px 0 black, 1px 1px 0 black';
+            noteEl.style.color = 'white';
+            noteEl.style.textShadow = '-1px -1px 0 black, 1px -1px 0 black, -1px 1px 0 black, 1px 1px 0 black';
+            break;
+        default: // everything else
+            stringEl.style.color = 'inherit';
+            stringEl.style.textShadow = 'none';
+            noteEl.style.color = 'inherit';
+            noteEl.style.textShadow = 'none';
+            break;
+    }
+}
+
+
+/* flower inside circle but below content */
+function toggleFlower(on){
+  // remove existing flower node
+  const existing = document.getElementById('flowerSVG');
+  if (existing) existing.remove();
+  if (!on) return;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.id = 'flowerSVG';
+  svg.setAttribute('viewBox','0 0 250 250');
+  svg.style.width='100%'; svg.style.height='100%'; svg.style.opacity='0.98';
+  svg.innerHTML = `
+    <defs><radialGradient id="petal2" cx="50%" cy="40%"><stop offset="0%" stop-color="#fff4f4"/><stop offset="100%" stop-color="#ff89a8"/></radialGradient></defs>
+    <g transform="translate(125,125)"><g fill="url(#petal2)" stroke="rgba(0,0,0,0.06)">
+      <ellipse rx="120" ry="54" transform="rotate(0)"></ellipse>
+      <ellipse rx="120" ry="54" transform="rotate(45)"></ellipse>
+      <ellipse rx="120" ry="54" transform="rotate(90)"></ellipse>
+      <ellipse rx="120" ry="54" transform="rotate(135)"></ellipse>
+      <ellipse rx="120" ry="54" transform="rotate(180)"></ellipse>
+      <ellipse rx="120" ry="54" transform="rotate(225)"></ellipse>
+      <ellipse rx="120" ry="54" transform="rotate(270)"></ellipse>
+      <ellipse rx="120" ry="54" transform="rotate(315)"></ellipse>
+    </g><circle r="54" fill="#fff9b0" stroke="rgba(0,0,0,0.06)"></circle></g>`;
+  svg.style.marginTop = '20px'; // shift down slightly to be under the letter
+  decorHolder.appendChild(svg);
+}
+
+/* among us decal inside circle below main elements */
+function toggleAmongUs(on){
+  // remove existing
+  if (amongUsImgEl){ amongUsImgEl.remove(); amongUsImgEl = null; }
+  if (!on) return;
+  const img = document.createElement('img');
+  img.src = themes.find(t=>t.id==='2').decal;
+  img.alt = 'impostor';
+  img.style.maxWidth='270px'; img.style.maxHeight='270px'; img.style.opacity='0.98';
+  amongUsImgEl = img;
+  decorHolder.appendChild(img);
+}
+
+/* restore persisted state at load */
+function restoreState(){
+  ownedThemes = JSON.parse(localStorage.getItem('ownedThemes')||'[]');
+  activeTheme = localStorage.getItem('activeTheme') || 'default';
+  if (activeTheme && activeTheme!=='default' && ownedThemes.includes(activeTheme)) applyTheme(activeTheme);
+  else applyTheme('default');
+}
+restoreState();
+
+/* ---------- display toggle ---------- */
+function toggleDisplayMode(){
+  displayMode = displayMode === 'letter' ? 'staff' : 'letter';
+  if (displayMode === 'letter'){ document.getElementById('staffSvg').style.display='none'; noteNameElement.style.display='block'; toggleDisplayButton.textContent='Switch to Staff Notation'; }
+  else { document.getElementById('staffSvg').style.display='block'; noteNameElement.style.display='none'; toggleDisplayButton.textContent='Switch to Letter Notation'; }
+  updateNoteDisplay();
+}
+
+/* ---------- staff drawing helpers: bigger bounds and ledger lines ------ */
+/* staff SVG layout:
+   main 5 lines y values: 40,56,72,88,104
+   map midi to y with spacing per semitone (approx 4px per semitone) and center at midiRef 64 -> y 72
+*/
+function drawReferenceTicks(){
+  refTicksGroup.innerHTML = '';
+  // small thin reference ticks every semitone across width for practice
+  const left = 28, right = 232;
+  for (let i = -12; i <= 12; i++){
+    const y = 72 - i*4;
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1', left);
+    line.setAttribute('x2', right);
+    line.setAttribute('y1', y);
+    line.setAttribute('y2', y);
+    line.setAttribute('stroke', 'rgba(255,255,255,0.06)');
+    line.setAttribute('stroke-width', '0.6');
+    refTicksGroup.appendChild(line);
+  }
+}
+drawReferenceTicks();
+
+function drawLedgerLinesIfNeeded(midi){
+  ledgerGroup.innerHTML = '';
+  // compute y of note
+  const refMidi = 64;
+  const y = 72 - (midi - refMidi) * 4;
+  // top staff line y=40, bottom=104
+  const left = 108, right = 132; // near note position
+  let count = 0;
+  if (y < 40) {
+    const overflow = 40 - y;
+    count = Math.floor(overflow / 16);
+    for (let i = 1; i <= count; i++) {
+      const lineY = 40 - i * 16;
+      const ln = document.createElementNS('http://www.w3.org/2000/svg','line');
+      ln.setAttribute('x1', left);
+      ln.setAttribute('x2', right);
+      ln.setAttribute('y1', lineY);
+      ln.setAttribute('y2', lineY);
+      ln.setAttribute('stroke', 'white');
+      ln.setAttribute('stroke-opacity', '0.85');
+      ln.setAttribute('stroke-width', '2');
+      ledgerGroup.appendChild(ln);
+    }
+  } else if (y > 104) {
+    const overflow = y - 104;
+    count = Math.floor(overflow / 16);
+    for (let i = 1; i <= count; i++) {
+      const lineY = 104 + i * 16;
+      const ln = document.createElementNS('http://www.w3.org/2000/svg','line');
+      ln.setAttribute('x1', left);
+      ln.setAttribute('x2', right);
+      ln.setAttribute('y1', lineY);
+      ln.setAttribute('y2', lineY);
+      ln.setAttribute('stroke', 'white');
+      ln.setAttribute('stroke-opacity', '0.85');
+      ln.setAttribute('stroke-width', '2');
+      ledgerGroup.appendChild(ln);
+    }
+  }
+}
+
+/* ---------- update note display ---------- */
+function updateNoteDisplay(){
+  if (currentString === -1){ stringNameElement.textContent='-'; noteNameElement.textContent='-'; document.getElementById('staffSvg').style.opacity=0.4; return; }
+  document.getElementById('staffSvg').style.opacity=1;
+  const notes = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const midi = Math.round(69 + 12 * Math.log2(currentFrequency / 440));
+  const noteIndex = ((midi % 12) + 12) % 12;
+  const noteName = notes[noteIndex];
+  stringNameElement.textContent = strings[currentString].name;
+  noteNameElement.textContent = noteName;
+  // staff note mapping
+  const refMidi = 64;
+  const y = 72 - (midi - refMidi) * 4; // 4 px per semitone
+  staffNoteGroup.setAttribute('transform', `translate(120,${y})`);
+  drawLedgerLinesIfNeeded(midi);
+}
+
+/* ---------- hint ---------- */
+function showHint(){
+  if (currentString === -1) return;
+  document.querySelectorAll('.fret-marker').forEach(m=>m.classList.remove('visible'));
+  const marker = document.querySelector(`.fret[data-string="${currentString}"][data-fret="${currentFret}"] .fret-marker`);
+  if (marker) marker.classList.add('visible');
+  statusElement.textContent = `Hint: fret ${currentFret}`;
+}
+
+/* ---------- pitch detection / audio (YIN) ---------- */
+function initAudio(){
+  if (isListening) return;
+  try{
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    navigator.mediaDevices.getUserMedia({audio:true})
+      .then(stream=>{
+        microphone = audioContext.createMediaStreamSource(stream);
+        analyser = audioContext.createAnalyser(); analyser.fftSize = 2048;
+        javascriptNode = audioContext.createScriptProcessor(2048,1,1);
+        microphone.connect(analyser); analyser.connect(javascriptNode); javascriptNode.connect(audioContext.destination);
+        javascriptNode.onaudioprocess = processAudio;
+        isListening=true; statusElement.textContent='Listening...';
+        startButton.style.display='none'; newNoteButton.disabled=false;
+        sensitivity.dispatchEvent(new Event('input'));
+        generateNewNote();
+      }).catch(err=>{
+        statusElement.textContent = 'Error accessing microphone: '+err.message;
+      });
+  }catch(e){
+    statusElement.textContent='Audio init error: '+e.message;
+  }
+}
+
+function playCorrectSound(){
+  if (soundPlayed) return;
+  try{
+    if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioContext.createOscillator();
+    const g = audioContext.createGain();
+    osc.type='sine'; osc.frequency.setValueAtTime(880,audioContext.currentTime); osc.frequency.exponentialRampToValueAtTime(1100,audioContext.currentTime+0.12);
+    g.gain.setValueAtTime(0.28,audioContext.currentTime); g.gain.exponentialRampToValueAtTime(0.001,audioContext.currentTime+0.3);
+    osc.connect(g); g.connect(audioContext.destination); osc.start(); osc.stop(audioContext.currentTime+0.3);
+    soundPlayed = true;
+  }catch(e){ console.error(e); }
+}
+
+function yinPitchDetection(buffer, sampleRate){
+  const yinBuffer = new Float32Array(Math.floor(buffer.length/2));
+  let tau;
+  yinBuffer[0]=1;
+  for (tau=1; tau<yinBuffer.length; tau++){
+    let s=0;
+    for (let i=0;i<yinBuffer.length;i++){
+      const delta = buffer[i] - buffer[i+tau];
+      s += delta*delta;
+    }
+    yinBuffer[tau]=s;
+  }
+  let runningSum=0;
+  for (tau=1;tau<yinBuffer.length;tau++){
+    runningSum += yinBuffer[tau];
+    yinBuffer[tau] = yinBuffer[tau] * tau / runningSum;
+  }
+  tau=2;
+  while (tau<yinBuffer.length){
+    if (yinBuffer[tau] < 0.15) {
+      while (tau+1<yinBuffer.length && yinBuffer[tau+1] < yinBuffer[tau]) tau++;
+      break;
+    }
+    tau++;
+  }
+  if (tau===yinBuffer.length || yinBuffer[tau]>=0.15) return {pitch:-1, confidence:0};
+  let betterTau = tau;
+  if (tau>0 && tau<yinBuffer.length-1){
+    const s0=yinBuffer[tau-1], s1=yinBuffer[tau], s2=yinBuffer[tau+1];
+    betterTau = tau + (s2 - s0) / (2*(2*s1 - s2 - s0));
+  }
+  const pitch = sampleRate / betterTau;
+  const confidence = 1 - yinBuffer[tau];
+  return {pitch, confidence};
+}
+
+function getFrequencyTolerance(freq){ return Math.max(1, 2 + (freq/200)); }
+
+function processAudio(){
+  if (!isListening || currentFrequency===0) return;
+  const buffer = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(buffer);
+  const pitchData = yinPitchDetection(buffer, audioContext.sampleRate);
+  if (pitchData.pitch !== -1 && pitchData.confidence > confidenceThreshold){
+    const now = Date.now();
+    const dt = Math.min(200, now - lastDetectionTime);
+    lastDetectionTime = now;
+    const tol = getFrequencyTolerance(currentFrequency);
+    if (Math.abs(pitchData.pitch - currentFrequency) < tol){
+      correctNoteSustained += dt;
+      const pct = Math.min(100, Math.round((correctNoteSustained/requiredSustainTime)*100));
+      setProgressVisual(Math.min(1, correctNoteSustained/requiredSustainTime));
+      if (correctNoteSustained >= requiredSustainTime && !soundPlayed){
+        noteDisplay.classList.add('correct');
+        playCorrectSound();
+        statusElement.textContent = 'Correct! +10 pts';
+        userScore += 10; persist(); updateDisplays();
+        setTimeout(()=>{ generateNewNote(); soundPlayed=false; }, 900);
+      } else {
+        statusElement.textContent = `Holding...`;
+      }
+    } else {
+      noteDisplay.classList.add('incorrect');
+      correctNoteSustained = 0;
+      setProgressVisual(0);
+      setTimeout(()=> noteDisplay.classList.remove('incorrect'), 260);
+    }
+  } else {
+    correctNoteSustained = Math.max(0, correctNoteSustained - 30);
+    setProgressVisual(Math.min(1, correctNoteSustained/requiredSustainTime));
+  }
+}
+
+/* ---------- generate notes ---------- */
+function generateNewNote(){
+  noteDisplay.classList.remove('correct'); noteDisplay.classList.remove('incorrect');
+  setProgressVisual(0); correctNoteSustained = 0; soundPlayed=false;
+  currentString = Math.floor(Math.random()*strings.length);
+  currentFret = Math.floor(Math.random()*13);
+  currentFrequency = noteFrequencies[currentString][currentFret];
+  updateNoteDisplay();
+  statusElement.textContent = '';
+  document.querySelectorAll('.fret-marker').forEach(m=>m.classList.remove('visible'));
+}
+
+/* ---------- scoring / persistence ---------- */
+function persist(){ localStorage.setItem('userScore', String(userScore)); localStorage.setItem('ownedThemes', JSON.stringify(ownedThemes)); localStorage.setItem('activeTheme', activeTheme||'default'); }
+function updateDisplays(){ scoreDisplay.textContent = userScore; availableDisplay.textContent = userScore; }
+
+/* ---------- init ---------- */
+updateDisplays();
+
+/* ---------- Blackjack: use score directly ---------- */
+let deck = [];
+function newDeck(){ deck=[]; const suits=['♠','♥','♦','♣']; const ranks=['A','2','3','4','5','6','7','8','9','10','J','Q','K']; for (let s of suits) for (let r of ranks) deck.push({suit:s,rank:r}); shuffle(deck); }
+function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } }
+function valueOf(card){ if (card.rank==='A') return 11; if (['J','Q','K'].includes(card.rank)) return 10; return parseInt(card.rank); }
+function handValue(cards){
+  let total=0, aces=0;
+  for (let c of cards){ if (c.rank==='A') aces++; total += valueOf(c); }
+  while (total>21 && aces>0){ total -= 10; aces--; }
+  return total;
+}
+
+let playerHand=[], dealerHand=[], currentBet=0;
+
+dealBtn.addEventListener('click', ()=>{
+  if (userScore <= 0){ alert('No points to bet. Earn notes first.'); return; }
+  currentBet = Math.max(1, Math.floor(Number(betInput.value) || 1));
+  if (currentBet > userScore){ alert('Not enough points to bet that amount.'); return; }
+  if (deck.length < 15) newDeck();
+  userScore -= currentBet; persist(); updateDisplays();
+  playerHand = [deck.pop(), deck.pop()];
+  dealerHand = [deck.pop(), deck.pop()];
+  renderHands(true);
+  dealBtn.disabled = true; hitBtn.disabled = false; standBtn.disabled = false;
+  bjMessage.textContent = 'Decide: Hit or Stand';
+});
+
+hitBtn.addEventListener('click', ()=>{
+  if (!playerHand.length) return;
+  playerHand.push(deck.pop()); renderHands(true);
+  if (handValue(playerHand) > 21){ endRound('bust'); }
+});
+
+standBtn.addEventListener('click', ()=>{
+  if (!playerHand.length) return;
+  while (handValue(dealerHand) < 17) dealerHand.push(deck.pop());
+  renderHands(false);
+  const pv = handValue(playerHand), dv = handValue(dealerHand);
+  if (dv > 21 || pv > dv){ endRound('win'); }
+  else if (pv === dv) endRound('push');
+  else endRound('lose');
+});
+
+function renderHands(hideDealerSecond){
+  playerCardsDiv.innerHTML=''; dealerCardsDiv.innerHTML='';
+  for (let c of playerHand){ const div=document.createElement('div'); div.className='card'; div.textContent = c.rank + c.suit; playerCardsDiv.appendChild(div); }
+  if (dealerHand.length){
+    dealerCardsDiv.innerHTML='';
+    if (hideDealerSecond){
+      const first=document.createElement('div'); first.className='card'; first.textContent = dealerHand[0].rank + dealerHand[0].suit; dealerCardsDiv.appendChild(first);
+      const back=document.createElement('div'); back.className='card'; back.textContent = '❓'; dealerCardsDiv.appendChild(back);
+      dealerValueSpan.textContent = valueOf(dealerHand[0]) + ' + ?';
+    } else {
+      for (let c of dealerHand){ const div=document.createElement('div'); div.className='card'; div.textContent = c.rank + c.suit; dealerCardsDiv.appendChild(div); }
+      dealerValueSpan.textContent = handValue(dealerHand);
+    }
+  } else dealerValueSpan.textContent = '0';
+  playerValueSpan.textContent = handValue(playerHand);
+}
+
+function endRound(result){
+  renderHands(false);
+  if (result==='bust'){ bjMessage.textContent = 'You busted. Lost bet.'; }
+  else if (result==='win'){ bjMessage.textContent = 'You win!'; userScore += currentBet * 2; }
+  else if (result==='push'){ bjMessage.textContent = 'Push. Bet returned.'; userScore += currentBet; }
+  else if (result==='lose'){ bjMessage.textContent = 'Dealer wins.'; }
+  currentBet = 0; playerHand=[]; dealerHand=[]; persist(); updateDisplays();
+  dealBtn.disabled=false; hitBtn.disabled=true; standBtn.disabled=true;
+}
+
+/* init deck */
+newDeck();
+
+/* ---------- Dev: secret hiddentest unlock panel & 'g' hold ---------- */
+let typedBuffer = '';
+let typedTimer = null;
+const secret = 'hiddentest';
+document.addEventListener('keydown', (e)=>{
+  if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)){
+    typedBuffer += e.key.toLowerCase();
+    if (typedBuffer.length > secret.length) typedBuffer = typedBuffer.slice(-secret.length);
+    if (typedBuffer.endsWith(secret)){
+      openDevPanel();
+      typedBuffer = '';
+    }
+    if (typedTimer) clearTimeout(typedTimer);
+    typedTimer = setTimeout(()=> typedBuffer = '', 2000);
+  }
+});
+
+function openDevPanel(){
+  devPanel.classList.add('open'); devPanel.style.display='block';
+  devScoreInput.value = userScore;
+}
+devClose.addEventListener('click', ()=>{ devPanel.classList.remove('open'); devPanel.style.display='none'; });
+
+devSetScore.addEventListener('click', ()=>{
+  const v = Math.floor(Number(devScoreInput.value) || 0);
+  userScore = Math.max(0, v); persist(); updateDisplays();
+});
+
+/* dev g-hold simulate */
+let devGInterval=null;
+document.addEventListener('keydown', (e)=>{
+  if (!devGHold.checked) return;
+  if (!e.repeat && e.key.toLowerCase()==='g'){ startDevG(); }
+});
+document.addEventListener('keyup', (e)=>{
+  if (!devGHold.checked) return;
+  if (e.key.toLowerCase()==='g'){ stopDevG(); }
+});
+function startDevG(){
+  if (devGInterval) return;
+  devGInterval = setInterval(()=>{
+    const dt = 60;
+    correctNoteSustained += dt;
+    setProgressVisual(Math.min(1, correctNoteSustained/requiredSustainTime));
+    if (correctNoteSustained >= requiredSustainTime && !soundPlayed){
+      noteDisplay.classList.add('correct');
+      playCorrectSound();
+      statusElement.textContent = 'Correct! +10 pts (dev)';
+      userScore += 10; persist(); updateDisplays();
+      setTimeout(()=>{ generateNewNote(); soundPlayed=false; }, 900);
+    }
+  }, 60);
+}
+function stopDevG(){
+  if (devGInterval){ clearInterval(devGInterval); devGInterval=null; }
+  const decay = setInterval(()=>{
+    correctNoteSustained = Math.max(0, correctNoteSustained - 40);
+    setProgressVisual(Math.min(1, correctNoteSustained/requiredSustainTime));
+    if (correctNoteSustained <= 0) clearInterval(decay);
+  }, 80);
+}
+
+/* ---------- Save / Load code system — fixed secret, survives cookie/localStorage wipes ---------- */
+const SECRET_KEY = 'TrinitySecret123!🔥'; // pick any secret string
+
+function getSecretBytes(){
+  const enc = new TextEncoder();
+  return enc.encode(SECRET_KEY);
+}
+
+function base64urlEncode(buffer){
+  const bytes = new Uint8Array(buffer);
+  let s = '';
+  for (let i=0;i<bytes.length;i++) s += String.fromCharCode(bytes[i]);
+  const b64 = btoa(s);
+  return b64.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+
+function base64urlDecode(str){
+  str = str.replace(/-/g,'+').replace(/_/g,'/');
+  while(str.length % 4) str += '=';
+  const bin = atob(str);
+  const arr = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+  return arr.buffer;
+}
+
+async function sha256(msgBuffer){
+  return await crypto.subtle.digest('SHA-256', msgBuffer);
+}
+
+async function generateSaveCode(){
+  const secretBytes = getSecretBytes();
+
+  const payloadObj = {
+    score: userScore,
+    owned: ownedThemes.slice(),
+    active: activeTheme,
+    ts: Date.now()
+  };
+
+  const payloadBytes = new TextEncoder().encode(JSON.stringify(payloadObj));
+
+  const combined = new Uint8Array(secretBytes.length + payloadBytes.length);
+  combined.set(secretBytes, 0);
+  combined.set(payloadBytes, secretBytes.length);
+
+  const sig = await sha256(combined.buffer);
+  const sigBytes = new Uint8Array(sig).slice(0, 10);
+
+  return base64urlEncode(payloadBytes) + '.' + base64urlEncode(sigBytes);
+}
+
+async function applySaveCode(code){
+  try{
+    const parts = code.split('.');
+    if(parts.length !== 2) return false;
+
+    const payloadBytes = base64urlDecode(parts[0]);
+    const sigBytes = new Uint8Array(base64urlDecode(parts[1]));
+
+    const secretBytes = getSecretBytes();
+
+    const combined = new Uint8Array(secretBytes.length + payloadBytes.byteLength);
+    combined.set(secretBytes, 0);
+    combined.set(new Uint8Array(payloadBytes), secretBytes.length);
+
+    const expected = await sha256(combined.buffer);
+    const expectedSlice = new Uint8Array(expected).slice(0, 10);
+
+    for(let i=0;i<expectedSlice.length;i++)
+      if(expectedSlice[i] !== sigBytes[i]) return false;
+
+    const obj = JSON.parse(new TextDecoder().decode(new Uint8Array(payloadBytes)));
+
+    if(typeof obj.score === 'number') userScore = obj.score;
+    if(Array.isArray(obj.owned)) ownedThemes = obj.owned;
+    if(obj.active) activeTheme = obj.active;
+
+    persist();
+    applyTheme(activeTheme);
+    updateDisplays();
+    renderShop();
+    return true;
+  }catch(e){
+    console.error(e);
+    return false;
+  }
+}
+
+
+/* ---------- misc helpers ---------- */
+function persist(){ localStorage.setItem('userScore', String(userScore)); localStorage.setItem('ownedThemes', JSON.stringify(ownedThemes)); localStorage.setItem('activeTheme', activeTheme||'default'); }
+function updateDisplays(){ scoreDisplay.textContent = userScore; availableDisplay.textContent = userScore; }
+
+/* ---------- initial actions ---------- */
+updateDisplays();
+renderShop();
+newNoteButton.disabled = true;
+
+// Initial display setup for default to letter
+document.getElementById('staffSvg').style.display = 'none';
+noteNameElement.style.display = 'block';
+toggleDisplayButton.textContent = 'Switch to Staff Notation';
+
+/* generate initial note so UI isn't empty (user still must click Start for mic) */
+generateNewNote();
+
+</script>
+</body>
+</html>
