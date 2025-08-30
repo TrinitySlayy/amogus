@@ -216,11 +216,9 @@ body[data-theme="8"]{ --bg1:#0b0b0b; --bg2:#1a1a1a; --accent:#b71c1c; --accent2:
           <div class="smallmuted">Sensitivity</div>
         </div>
       </div>
-
-      <div class="hint">Press Spacebar to reveal the fret position. Hold the note until the progress completes.</div>
+      <p class="sub">Press Spacebar or click fretboard for hint</p>
 
       <div class="fretboard-container">
-        <h3>Fretboard Hint</h3>
         <div class="fretboard-diagram" id="fretboardDiagram"></div>
         <div class="fret-numbers" id="fretNumbers" style="margin-top:6px;"></div>
       </div>
@@ -416,35 +414,60 @@ function setProgressVisual(progress){ // progress 0..1
 }
 setProgressVisual(0);
 
-/* ---------- init fretboard & numbers so alignment is exact ---------- */
 function initFretboard(){
   const fb = document.getElementById('fretboardDiagram');
-  const fn = document.getElementById('fretNumbers');
-  fb.innerHTML = ''; fn.innerHTML='';
-  for (let i=0;i<strings.length;i++){
-    const sdiv=document.createElement('div'); sdiv.className='string';
-    const sname=document.createElement('div'); sname.className='string-name'; sname.textContent=strings[i].name;
-    const frets=document.createElement('div'); frets.className='frets'; frets.style.display='flex';
-    for (let fret=0; fret<=12; fret++){
-      const fretElem=document.createElement('div'); fretElem.className='fret';
-      fretElem.dataset.string=i; fretElem.dataset.fret=fret;
-      fretElem.style.flex='1';
-      fretElem.style.height='20px';
-      const mark=document.createElement('div'); mark.className='fret-marker';
-      fretElem.appendChild(mark); frets.appendChild(fretElem);
+  fb.innerHTML = '';
+
+  const numFrets = 12;
+
+  for (let i=0; i<strings.length; i++){
+    const sdiv = document.createElement('div');
+    sdiv.className = 'string';
+
+    const sname = document.createElement('div');
+    sname.className = 'string-name';
+    sname.textContent = strings[i].name;
+
+    const frets = document.createElement('div');
+    frets.className = 'frets';
+    frets.style.display = 'flex';
+
+    for (let fret=0; fret<=numFrets; fret++){
+      const fretElem = document.createElement('div');
+      fretElem.className = 'fret';
+      fretElem.dataset.string = i;
+      fretElem.dataset.fret = fret;
+      fretElem.style.flex = '1';
+      fretElem.style.height = '20px';
+      fretElem.style.position = 'relative';
+
+      // add fret marker
+      const mark = document.createElement('div');
+      mark.className = 'fret-marker';
+      fretElem.appendChild(mark);
+
+      // add fret number only for first string
+      if(i === 0){
+        const num = document.createElement('div');
+        num.className = 'fret-number';
+        num.textContent = fret;
+        num.style.position = 'absolute';
+        num.style.top = '-18px'; // adjust above fret
+        num.style.width = '100%';
+        num.style.textAlign = 'center';
+        fretElem.appendChild(num);
+      }
+
+      frets.appendChild(fretElem);
     }
-    sdiv.appendChild(sname); sdiv.appendChild(frets);
+
+    sdiv.appendChild(sname);
+    sdiv.appendChild(frets);
     fb.appendChild(sdiv);
-  }
-  // create fret numbers with same flex sizing
-  const fnContainer = document.getElementById('fretNumbers');
-  fnContainer.innerHTML='';
-  for (let fret=0; fret<=12; fret++){
-    const d = document.createElement('div'); d.className='fret-number'; d.textContent=fret; d.style.flex='1';
-    fnContainer.appendChild(d);
   }
 }
 initFretboard();
+
 
 /* ---------- events ---------- */
 startButton.addEventListener('click', initAudio);
@@ -455,6 +478,11 @@ sensitivity.addEventListener('input', () => {
   confidenceThreshold = 0.05 + (sensitivity.value*0.01);
 });
 document.addEventListener('keydown', (e)=>{ if (e.code==='Space'){ e.preventDefault(); showHint(); } });
+document.querySelector('.fretboard-container').addEventListener('click', (e) => {
+    e.preventDefault(); // optional: prevent text selection
+    showHint();
+});
+
 
 openShopBtn.addEventListener('click', ()=>{ renderShop(); shopModal.classList.add('open'); });
 closeShop.addEventListener('click', ()=>{ shopModal.classList.remove('open'); });
